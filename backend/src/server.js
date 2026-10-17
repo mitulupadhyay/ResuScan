@@ -8,13 +8,17 @@ const { connectDB } = require("./config/db");
 const { notFound, errorHandler } = require("./middleware/errorHandler");
 
 const healthRouter = require("./routes/health");
+const authRouter = require("./routes/auth");
+const resumeRouter = require("./routes/resume");
 
 const app = express();
 
 app.set("trust proxy", 1);
 app.use(
   cors({
-    origin: true, // reflect request origin - allows everything while keeping credentials working
+    // Only the origins listed in CLIENT_ORIGIN may make credentialed requests.
+    // Requests with no Origin header (curl, same-origin, server-to-server) are allowed.
+    origin: (origin, cb) => cb(null, !origin || env.clientOrigins.includes(origin)),
     credentials: true,
   })
 );
@@ -24,6 +28,8 @@ app.use(cookieParser());
 if (!env.isProd) app.use(morgan("dev"));
 
 app.use("/api/health", healthRouter);
+app.use("/api/auth", authRouter);
+app.use("/api/resumes",resumeRouter);
 
 app.use(notFound);
 app.use(errorHandler);
