@@ -11,6 +11,11 @@ const healthRouter = require("./routes/health");
 const authRouter = require("./routes/auth");
 const resumeRouter = require("./routes/resume");
 
+const dashboardRouter = require("./routes/dashboard");
+const insightsRouter = require("./routes/insights");
+const versionsRouter = require("./routes/version");
+const historyRouter = require("./routes/history");
+
 const app = express();
 
 app.set("trust proxy", 1);
@@ -27,9 +32,18 @@ app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 app.use(cookieParser());
 if (!env.isProd) app.use(morgan("dev"));
 
+app.get("/", (req, res) => {
+  res.json({ name: "ResuScan API", status: "ok", health: "/api/health" });
+});
+
 app.use("/api/health", healthRouter);
 app.use("/api/auth", authRouter);
 app.use("/api/resumes",resumeRouter);
+
+app.use("/api/dashboard", dashboardRouter);
+app.use("/api/insights", insightsRouter);
+app.use("/api/versions", versionsRouter);
+app.use("/api/history", historyRouter);
 
 app.use(notFound);
 app.use(errorHandler);

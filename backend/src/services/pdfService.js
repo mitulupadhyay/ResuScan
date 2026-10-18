@@ -32,4 +32,4 @@ async function extractText(buffer) {
   }
 }
 
-module.exports = { extractText }
+module.exports = { extractText };

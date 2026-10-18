@@ -182,7 +182,9 @@ async function analyzeResume({ rawText, targetRole }) {
       };
     } catch (err) {
       lastErr = err;
-      if (attempt === 2) break;
+      const status = Number(err?.status);
+      const permanent = status >= 400 && status < 500 && status !== 429;
+      if (permanent || attempt === 2) break;
     }
   }
 

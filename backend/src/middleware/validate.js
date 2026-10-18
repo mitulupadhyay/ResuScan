@@ -9,7 +9,17 @@ const validate =
         ApiError.badRequest("Validation failed", result.error.issues),
       );
     }
-    req[source] = result.data;
+    if (source === "query") {
+      // Express 5: req.query is a read-only getter, so redefine it.
+      Object.defineProperty(req, "query", {
+        value: result.data,
+        writable: true,
+        configurable: true,
+        enumerable: true,
+      });
+    } else {
+      req[source] = result.data;
+    }
     next();
   };
 
