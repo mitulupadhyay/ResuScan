@@ -22,14 +22,17 @@ export function UploadDropzone({ onUploaded, compact = false }) {
   const upload = useUploadResume();
 
   const { getRootProps, getInputProps, isDragActive, isDragReject } = useDropzone({
-    accept: { "application/pdf": [".pdf"] },
+    accept: {
+      "application/pdf": [".pdf"],
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [".docx"],
+    },
     maxFiles: 1,
     maxSize: MAX_BYTES,
     multiple: false,
     onDropAccepted: (files) => {
       setErr("");
       setFile(files[0]);
-      if (!title) setTitle(files[0].name.replace(/\.pdf$/i, ""));
+      if (!title) setTitle(files[0].name.replace(/\.(pdf|docx)$/i, ""));
     },
     onDropRejected: (rejections) => {
       const reason = rejections?.[0]?.errors?.[0]?.message || "File rejected";
@@ -85,10 +88,10 @@ export function UploadDropzone({ onUploaded, compact = false }) {
               <UploadCloud size={compact ? 18 : 22} />
             </motion.div>
             <div className={cn("font-display font-semibold tracking-tight", compact ? "text-sm" : "text-base")}>
-              {isDragActive ? "Drop it here" : "Drop your resume PDF"}
+              {isDragActive ? "Drop it here" : "Drop your resume (PDF or Word)"}
             </div>
             <div className="text-xs text-[var(--ink-muted)] mt-1">
-              or click to browse · max 5 MB · PDF only
+              or click to browse · max 5 MB · PDF or .docx (scanned images not supported)
             </div>
           </div>
         </div>

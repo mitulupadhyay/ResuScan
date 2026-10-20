@@ -12,6 +12,16 @@ const analyzeLimiter = rateLimit({
   },
 });
 
+// Uploads trigger an AI parse, so cap them per user.
+const uploadLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 8,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req) => req.user?._id?.toString() || ipKeyGenerator(req.ip),
+  message: { error: { message: "Too many uploads - please wait a minute and retry." } },
+});
+
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 30,
@@ -23,4 +33,4 @@ const authLimiter = rateLimit({
   },
 });
 
-module.exports = { analyzeLimiter, authLimiter };
+module.exports = { analyzeLimiter, authLimiter, uploadLimiter };

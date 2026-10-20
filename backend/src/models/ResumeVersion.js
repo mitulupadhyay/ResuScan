@@ -44,6 +44,7 @@ const projectItemSchema = new mongoose.Schema(
     name: String,
     description: String,
     tech: [String],
+    bullets: [String],
     links: [linkSchema],
   },
   { _id: false }
@@ -58,6 +59,11 @@ const certificationItemSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const skillGroupSchema = new mongoose.Schema(
+  { category: String, items: [String] },
+  { _id: false }
+);
+
 const parsedSectionsSchema = new mongoose.Schema(
   {
     basics: { type: basicsSchema, default: () => ({}) },
@@ -65,6 +71,8 @@ const parsedSectionsSchema = new mongoose.Schema(
     experience: { type: [experienceItemSchema], default: [] },
     education: { type: [educationItemSchema], default: [] },
     skills: { type: [String], default: [] },
+    skillGroups: { type: [skillGroupSchema], default: [] },
+    sectionOrder: { type: [String], default: [] },
     projects: { type: [projectItemSchema], default: [] },
     certifications: { type: [certificationItemSchema], default: [] },
     languages: { type: [String], default: [] },
@@ -87,8 +95,16 @@ const resumeVersionSchema = new mongoose.Schema(
     parsedSections: { type: parsedSectionsSchema, default: () => ({}) },
     sourceType: {
       type: String,
-      enum: ["upload", "rewrite"],
+      enum: ["upload", "rewrite", "edit", "restore"],
       required: true,
+    },
+    targetRole: { type: String, default: "" },
+    notes: {
+      type: new mongoose.Schema(
+        { changes: [String], todos: [String] },
+        { _id: false }
+      ),
+      default: undefined,
     },
     parentVersionId: {
       type: mongoose.Schema.Types.ObjectId,

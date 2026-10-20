@@ -1,5 +1,6 @@
 const express = require("express");
 const cors = require("cors");
+const helmet = require("helmet");
 const cookieParser = require("cookie-parser");
 const morgan = require("morgan");
 
@@ -10,6 +11,13 @@ const { notFound, errorHandler } = require("./middleware/errorHandler");
 const healthRouter = require("./routes/health");
 const authRouter = require("./routes/auth");
 const resumeRouter = require("./routes/resume");
+const jobMatchRouter = require("./routes/jobMatch");
+const improveRouter = require("./routes/improve");
+
+const dashboardRouter = require("./routes/dashboard");
+const insightsRouter = require("./routes/insights");
+const versionsRouter = require("./routes/version");
+const historyRouter = require("./routes/history");
 
 const dashboardRouter = require("./routes/dashboard");
 const insightsRouter = require("./routes/insights");
@@ -19,6 +27,8 @@ const historyRouter = require("./routes/history");
 const app = express();
 
 app.set("trust proxy", 1);
+// Security headers. CORP is cross-origin because the API is called from a separate frontend origin (CORS still gates access).
+app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
 app.use(
   cors({
     // Only the origins listed in CLIENT_ORIGIN may make credentialed requests.
@@ -39,6 +49,13 @@ app.get("/", (req, res) => {
 app.use("/api/health", healthRouter);
 app.use("/api/auth", authRouter);
 app.use("/api/resumes",resumeRouter);
+app.use("/api/job-matches", jobMatchRouter);
+app.use("/api/improvements", improveRouter);
+
+app.use("/api/dashboard", dashboardRouter);
+app.use("/api/insights", insightsRouter);
+app.use("/api/versions", versionsRouter);
+app.use("/api/history", historyRouter);
 
 app.use("/api/dashboard", dashboardRouter);
 app.use("/api/insights", insightsRouter);

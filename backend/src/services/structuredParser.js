@@ -2,6 +2,7 @@ const { GoogleGenAI, Type } = require("@google/genai");
 const { z } = require("zod");
 
 const env = require("../config/env");
+const { enrichParsed } = require("./resumeText");
 
 const ai = env.geminiApiKey ? new GoogleGenAI({ apiKey: env.geminiApiKey }) : null;
 
@@ -162,6 +163,7 @@ function buildPrompt(rawText) {
     "",
     "Extract structured data:",
     "- basics: name, professional title, location, email, phone, social links (LinkedIn / GitHub / portfolio etc.; label like \"LinkedIn\", full URL)",
+    "- Hyperlinks appear in the text as markdown: [label](url). Always put the url in the matching links entry.",
     "- summary: the professional summary paragraph (rejoin if split across lines)",
     "- experience: jobs most recent first, with company, role, period (preserve original date format), location if available, and bullet points",
     "- education: degree, school, period, location, optional details",
@@ -195,10 +197,15 @@ const EMPTY = {
   languages: [],
   interests: [],
 };
-async function parseResume(rawText) {
-  if (!ai || !rawText?.trim()) return EMPTY;
+async function parseResume(rawText, { strict = false } = {}) {
+  const fallback = () => enrichParsed(rawText, EMPTY);
+  if (!ai || !rawText?.trim()) {
+    if (strict) throw new Error("GEMINI_API_KEY is not configured on the server.");
+    return fallback();
+  }
 
   const prompt = buildPrompt(rawText);
+  let lastErr;
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
       const result = await ai.models.generateContent({
@@ -213,16 +220,16 @@ async function parseResume(rawText) {
 
       const text = typeof result.text === "function" ? result.text() : result.text;
       if (!text) throw new Error("Empty response");
-      const parsed = JSON.parse(text);
-      return validator.parse(parsed);
+      return enrichParsed(rawText, validator.parse(JSON.parse(text)));
     } catch (err) {
-      if (attempt === 2) {
-        console.error("Structured parse failed:", err.message);
-        return EMPTY;
-      }
+      lastErr = err;
+      const status = Number(err?.status);
+      if ((status >= 400 && status < 500 && status !== 429) || attempt === 2) break;
     }
   }
-  return EMPTY;
+  console.error("Structured parse failed:", lastErr?.message);
+  if (strict) throw lastErr;
+  return fallback();
 }
 
 module.exports = { parseResume };

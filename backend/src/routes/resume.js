@@ -6,15 +6,22 @@ const asyncHandler = require("../utils/asyncHandler");
 const ApiError = require("../utils/ApiError");
 const { requireAuth } = require("../middleware/auth");
 const { validate } = require("../middleware/validate");
-const { uploadPdf } = require("../middleware/upload");
-const { analyzeLimiter } = require("../middleware/rateLimit");
+const { uploadPdf, uploadResume } = require("../middleware/upload");
+const { analyzeLimiter, uploadLimiter } = require("../middleware/rateLimit");
 
 const Resume = require("../models/Resume");
 const ResumeVersion = require("../models/ResumeVersion");
 const Analysis = require("../models/Analysis");
+const JobMatch = require("../models/JobMatch");
 
 const { extractText } = require("../services/pdfService");
 const { parseResume: parseStructured } = require("../services/structuredParser");
+const { optimizeResume } = require("../services/geminiService");
+const { isThinParse, resumeToText } = require("../services/resumeText");
+const { normalizeSections } = require("../services/sectionsSchema");
+const { extractPlain } = require("../services/pdfService");
+const { extractDocxText } = require("../services/docxService");
+const { validateExport } = require("../services/exportValidator");
 const { analyzeResume } = require("../services/geminiService");
 
 const { diffText, summarize } = require("../services/diffService");
@@ -46,14 +53,18 @@ async function loadVersion(resumeId, versionId) {
 
 router.post(
   "/",
-  uploadPdf("file"),
+  uploadLimiter,
+  uploadResume("file"),
   asyncHandler(async (req, res) => {
-    const { text, meta } = await extractText(req.file.buffer);
+    const { text, meta } =
+      req.file.kind === "docx"
+        ? await extractDocxText(req.file.buffer)
+        : await extractText(req.file.buffer);
     const parsedSections = await parseStructured(text);
 
     const title =
       (req.body.title || "").trim() ||
-      req.file.originalname.replace(/\.pdf$/i, "") ||
+      req.file.originalname.replace(/\.(pdf|docx)$/i, "") ||
       "Untitled Resume";
 
     const resume = await Resume.create({
@@ -78,6 +89,33 @@ router.post(
     res.status(201).json({ resume, version, meta });
   })
 );
+
+// Start from scratch: an empty, editable resume seeded with the account's name and email.
+router.post(
+  "/blank",
+  validate(z.object({ title: z.string().trim().max(120).optional() })),
+  asyncHandler(async (req, res) => {
+    const parsed = normalizeSections({ basics: { name: req.user.name, email: req.user.email } });
+    const resume = await Resume.create({
+      userId: req.user._id,
+      title: req.body.title || "My Resume",
+      latestVersionNumber: 1,
+    });
+    const version = await ResumeVersion.create({
+      resumeId: resume._id,
+      versionNumber: 1,
+      label: "V1",
+      rawText: resumeToText(parsed),
+      parsedSections: parsed,
+      sourceType: "edit",
+      parentVersionId: null,
+    });
+    resume.currentVersionId = version._id;
+    await resume.save();
+    res.status(201).json({ resume, version });
+  })
+);
+
 
 router.get(
   "/",
@@ -153,6 +191,7 @@ router.delete(
   asyncHandler(async (req, res) => {
     const resume = await loadOwnedResume(req);
     await Analysis.deleteMany({ resumeId: resume._id });
+    await JobMatch.deleteMany({ resumeId: resume._id });
     await ResumeVersion.deleteMany({ resumeId: resume._id });
     await resume.deleteOne();
     res.json({ ok: true });
@@ -186,6 +225,7 @@ router.post(
       userId: req.user._id,
       resumeId: resume._id,
       versionId: version._id,
+      targetRole: req.body.targetRole || "",
       atsScore: analysis.atsScore,
       scoreBreakdown: analysis.scoreBreakdown,
       issues: analysis.issues,
@@ -206,6 +246,188 @@ router.post(
   })
 );
 
+<<<<<<< HEAD
+=======
+const optimizeBody = z.object({
+  analysisId: objectIdSchema.optional(),
+  targetRole: z.string().trim().max(120).optional(),
+});
+
+// Build a complete, role-targeted, ATS-optimized version from an analysis.
+router.post(
+  "/:id/optimize",
+  analyzeLimiter,
+  validate(idParam, "params"),
+  validate(optimizeBody),
+  asyncHandler(async (req, res) => {
+    const resume = await loadOwnedResume(req);
+
+    const analysis = req.body.analysisId
+      ? await Analysis.findOne({ _id: req.body.analysisId, resumeId: resume._id })
+      : await Analysis.findOne({
+          resumeId: resume._id,
+          versionId: resume.currentVersionId,
+        }).sort({ createdAt: -1 });
+    if (!analysis) {
+      throw ApiError.badRequest("Run an analysis first - the optimizer fixes the issues it finds.");
+    }
+
+    const base = await loadVersion(resume._id, analysis.versionId);
+
+    // Older uploads may have been parsed while Gemini was unavailable.
+    if (isThinParse(base.parsedSections)) {
+      try {
+        base.parsedSections = await parseStructured(base.rawText, { strict: true });
+        await base.save();
+      } catch (err) {
+        throw ApiError.badRequest(
+          `Couldn't read this resume's structure (${err.message}). Try re-uploading the PDF.`
+        );
+      }
+      if (isThinParse(base.parsedSections)) {
+        throw ApiError.badRequest("Couldn't extract any resume sections from this version. Try re-uploading the PDF.");
+      }
+    }
+
+    const targetRole = req.body.targetRole || analysis.targetRole || "";
+    const { parsed, notes } = await optimizeResume({
+      parsedSections: base.parsedSections.toObject
+        ? base.parsedSections.toObject()
+        : base.parsedSections,
+      rawText: base.rawText,
+      analysis: analysis.toObject(),
+      targetRole,
+    });
+
+    const nextNumber = resume.latestVersionNumber + 1;
+    const version = await ResumeVersion.create({
+      resumeId: resume._id,
+      versionNumber: nextNumber,
+      label: `V${nextNumber}`,
+      rawText: resumeToText(parsed),
+      parsedSections: parsed,
+      sourceType: "rewrite",
+      parentVersionId: base._id,
+      targetRole,
+      notes,
+    });
+
+    resume.latestVersionNumber = nextNumber;
+    resume.currentVersionId = version._id;
+    await resume.save();
+
+    res.status(201).json({ version, notes, targetRole });
+  })
+);
+
+// Re-run structured parsing on a stored version (fixes resumes parsed while Gemini was down).
+router.post(
+  "/:id/versions/:versionId/reparse",
+  analyzeLimiter,
+  validate(z.object({ id: objectIdSchema, versionId: objectIdSchema }), "params"),
+  asyncHandler(async (req, res) => {
+    const resume = await loadOwnedResume(req);
+    const version = await loadVersion(resume._id, req.params.versionId);
+    try {
+      version.parsedSections = await parseStructured(version.rawText, { strict: true });
+    } catch (err) {
+      throw ApiError.badRequest(`Re-parse failed: ${err.message}`);
+    }
+    await version.save();
+    res.json({ version });
+  })
+);
+
+// Re-extract text from the exported PDF and compare it with the saved content. Stores nothing.
+router.post(
+  "/:id/versions/:versionId/validate-export",
+  validate(z.object({ id: objectIdSchema, versionId: objectIdSchema }), "params"),
+  uploadPdf("file"),
+  asyncHandler(async (req, res) => {
+    const resume = await loadOwnedResume(req);
+    const version = await loadVersion(resume._id, req.params.versionId);
+    const { text, numPages } = await extractPlain(req.file.buffer);
+    const parsed = version.parsedSections?.toObject ? version.parsedSections.toObject() : version.parsedSections;
+    res.json({ report: validateExport(parsed, text, { numPages }) });
+  })
+);
+
+const sectionsBody = z.object({ sections: z.unknown() });
+
+// Save user corrections as a NEW version - the original is never modified.
+router.put(
+  "/:id/versions/:versionId/sections",
+  validate(z.object({ id: objectIdSchema, versionId: objectIdSchema }), "params"),
+  validate(sectionsBody),
+  asyncHandler(async (req, res) => {
+    const resume = await loadOwnedResume(req);
+    const base = await loadVersion(resume._id, req.params.versionId);
+
+    let next;
+    try {
+      next = normalizeSections(req.body.sections);
+    } catch (err) {
+      const first = err.issues?.[0];
+      throw ApiError.badRequest(
+        first ? `${first.path.join(".") || "sections"}: ${first.message}` : "Invalid resume sections"
+      );
+    }
+
+    const prev = base.parsedSections?.toObject ? base.parsedSections.toObject() : base.parsedSections;
+    let prevNorm = null;
+    try { prevNorm = normalizeSections(prev); } catch { /* old data that no longer validates: treat as changed */ }
+    if (prevNorm && JSON.stringify(prevNorm) === JSON.stringify(next)) {
+      return res.json({ version: base, unchanged: true });
+    }
+
+    const nextNumber = resume.latestVersionNumber + 1;
+    const version = await ResumeVersion.create({
+      resumeId: resume._id,
+      versionNumber: nextNumber,
+      label: `V${nextNumber}`,
+      rawText: resumeToText(next),
+      parsedSections: next,
+      sourceType: "edit",
+      parentVersionId: base._id,
+      targetRole: base.targetRole || "",
+    });
+    resume.latestVersionNumber = nextNumber;
+    resume.currentVersionId = version._id;
+    await resume.save();
+    res.status(201).json({ version });
+  })
+);
+
+// Restore = copy an old version forward as the newest one. History is never rewritten.
+router.post(
+  "/:id/versions/:versionId/restore",
+  validate(z.object({ id: objectIdSchema, versionId: objectIdSchema }), "params"),
+  asyncHandler(async (req, res) => {
+    const resume = await loadOwnedResume(req);
+    const old = await loadVersion(resume._id, req.params.versionId);
+    if (String(resume.currentVersionId) === String(old._id)) {
+      throw ApiError.badRequest(`${old.label} is already the current version.`);
+    }
+    const nextNumber = resume.latestVersionNumber + 1;
+    const version = await ResumeVersion.create({
+      resumeId: resume._id,
+      versionNumber: nextNumber,
+      label: `V${nextNumber}`,
+      rawText: old.rawText,
+      parsedSections: old.parsedSections?.toObject ? old.parsedSections.toObject() : old.parsedSections,
+      sourceType: "restore",
+      parentVersionId: old._id,
+      targetRole: old.targetRole || "",
+      notes: old.notes?.toObject ? old.notes.toObject() : old.notes,
+    });
+    resume.latestVersionNumber = nextNumber;
+    resume.currentVersionId = version._id;
+    await resume.save();
+    res.status(201).json({ version, restoredFrom: old.label });
+  })
+);
+
+>>>>>>> 12ed780 (feat: custom section order, security headers, frontend unit tests)
 const rewriteBody = z.object({
   analysisId: objectIdSchema,
   rewriteIds: z.array(objectIdSchema).optional(), // omit/empty = apply all

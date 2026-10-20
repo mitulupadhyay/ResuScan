@@ -53,9 +53,14 @@ export default function Dashboard() {
         title="Welcome — let's roast your resume"
         description="Upload a PDF to get an instant ATS score, fixable issues, your strengths, and AI-rewritten bullets."
         action={
-          <Button variant="accent" size="lg" onClick={() => nav("/resumes")}>
-            Upload your first resume
-          </Button>
+          <div className="flex flex-wrap gap-2 justify-center">
+            <Button variant="accent" size="lg" onClick={() => nav("/resumes")}>
+              Upload your first resume
+            </Button>
+            <Button variant="outline" size="lg" onClick={() => nav("/onboarding")}>
+              {user?.onboarding?.completedAt ? "Change my goals" : "Set my target role"}
+            </Button>
+          </div>
         }
       />
     );

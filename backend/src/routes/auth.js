@@ -9,6 +9,10 @@ const { validate } = require("../middleware/validate");
 const { requireAuth } = require("../middleware/auth");
 const { authLimiter } = require("../middleware/rateLimit");
 const User = require("../models/user");
+const Resume = require("../models/Resume");
+const ResumeVersion = require("../models/ResumeVersion");
+const Analysis = require("../models/Analysis");
+const JobMatch = require("../models/JobMatch");
 
 const router = express.Router();
 
@@ -25,6 +29,13 @@ const loginSchema = z.object({
 
 const profileSchema = z.object({
   name: z.string().trim().min(1).max(80),
+});
+
+const onboardingSchema = z.object({
+  targetRole: z.string().trim().min(2, "Pick or type a target role").max(80),
+  experienceLevel: z.enum(["beginner", "academic_projects", "internships", "other"]),
+  goal: z.enum(["analyze", "tailor", "improve_projects", "from_scratch"]),
+  jobDescription: z.string().trim().max(15000).optional().default(""),
 });
 
 const passwordSchema = z.object({
@@ -73,6 +84,31 @@ router.post(
   })
 );
 
+// Permanently delete the account and everything it owns (resumes, versions, analyses, job matches).
+router.delete(
+  "/account",
+  authLimiter,
+  requireAuth,
+  validate(z.object({ password: z.string().min(1).max(128) })),
+  asyncHandler(async (req, res) => {
+    const user = await User.findById(req.user._id).select("+passwordHash");
+    if (!user) throw ApiError.unauthorized("Session no longer valid");
+    if (!(await user.comparePassword(req.body.password))) {
+      throw ApiError.unauthorized("Password is incorrect");
+    }
+    const ids = (await Resume.find({ userId: user._id }).select("_id").lean()).map((r) => r._id);
+    await Promise.all([
+      ResumeVersion.deleteMany({ resumeId: { $in: ids } }),
+      Analysis.deleteMany({ userId: user._id }),
+      JobMatch.deleteMany({ userId: user._id }),
+    ]);
+    await Resume.deleteMany({ userId: user._id });
+    await User.deleteOne({ _id: user._id });
+    res.clearCookie(env.cookieName, { ...cookieOptions, maxAge: undefined });
+    res.json({ ok: true });
+  })
+);
+
 router.post("/logout", (req, res) => {
   res.clearCookie(env.cookieName, { ...cookieOptions, maxAge: undefined });
   res.json({ ok: true });
@@ -92,6 +128,18 @@ router.patch(
   validate(profileSchema),
   asyncHandler(async (req, res) => {
     req.user.name = req.body.name;
+    await req.user.save();
+    res.json({ user: req.user });
+  })
+);
+
+router.put(
+  "/onboarding",
+  requireAuth,
+  validate(onboardingSchema),
+  asyncHandler(async (req, res) => {
+    const prev = req.user.onboarding?.completedAt;
+    req.user.onboarding = { ...req.body, completedAt: prev || new Date() };
     await req.user.save();
     res.json({ user: req.user });
   })

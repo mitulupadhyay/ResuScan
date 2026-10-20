@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Sparkles, ArrowLeft, Loader2, FileText, Download } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
+import { Sparkles, ArrowLeft, Loader2, FileText, Download, Target, Pencil, RotateCcw, Wand2 } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -17,12 +18,17 @@ import { KeywordChips } from "@/components/analysis/KeywordChips";
 import { BulletRewrites } from "@/components/analysis/BulletRewrites";
 import { VersionSwitcher } from "@/components/resume/VersionSwitcher";
 import { DiffView } from "@/components/resume/DiffView";
+import { OptimizeCard, VersionNotes, ThinParseNotice } from "@/components/resume/OptimizeCard";
+import { isThinParse } from "@/lib/resumeUtils";
 import { relativeTime } from "@/lib/utils";
 import {
   useResume,
   useAnalysisForVersion,
   useAnalyzeResume,
   useApplyRewrites,
+  useOptimizeResume,
+  useReparseVersion,
+  useRestoreVersion,
 } from "@/hooks/useResumes";
 
 export default function ResumeDetail() {
@@ -50,7 +56,11 @@ export default function ResumeDetail() {
 
   const analyze = useAnalyzeResume(id);
   const applyRewrites = useApplyRewrites(id);
-  const [targetRole, setTargetRole] = useState("");
+  const optimize = useOptimizeResume(id);
+  const reparse = useReparseVersion(id);
+  const restore = useRestoreVersion(id);
+  const { user } = useAuth();
+  const [targetRole, setTargetRole] = useState(user?.onboarding?.targetRole || "");
   const [tab, setTab] = useState("score");
 
   async function runAnalyze() {
@@ -61,6 +71,32 @@ export default function ResumeDetail() {
       });
     } catch {
       /* surfaced below */
+    }
+  }
+
+  async function runOptimize() {
+    if (!analysis?._id) return;
+    try {
+      const res = await optimize.mutateAsync({
+        analysisId: analysis._id,
+        targetRole: targetRole.trim() || undefined,
+      });
+      if (res?.version?._id) {
+        const newVersionId = res.version._id;
+        setActiveVersionId(newVersionId);
+        setTab("score");
+        // Score the new version so the improvement is visible immediately.
+        try {
+          await analyze.mutateAsync({
+            versionId: newVersionId,
+            targetRole: res.targetRole || targetRole.trim() || undefined,
+          });
+        } catch {
+          /* surfaced via analyze.error in the Run analysis card */
+        }
+      }
+    } catch {
+      /* surfaced inside the optimize card */
     }
   }
 
@@ -133,6 +169,41 @@ export default function ResumeDetail() {
             </Button>
             <Button
               variant="outline"
+              onClick={() => nav(`/resumes/${id}/improve`)}
+            >
+              <Wand2 size={14} /> Improve bullets
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => nav(`/resumes/${id}/edit?v=${activeVersionId}`)}
+              disabled={!activeVersionId}
+            >
+              <Pencil size={14} /> Edit sections
+            </Button>
+            {activeVersionId && resume?.currentVersionId && activeVersionId !== resume.currentVersionId && (
+              <Button
+                variant="outline"
+                disabled={restore.isPending}
+                onClick={async () => {
+                  try {
+                    const res = await restore.mutateAsync(activeVersionId);
+                    setActiveVersionId(res.version._id);
+                  } catch {
+                    /* toast shown by hook */
+                  }
+                }}
+              >
+                {restore.isPending ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />} Restore this version
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              onClick={() => nav(`/resumes/${id}/match`)}
+            >
+              <Target size={14} /> Match to a job
+            </Button>
+            <Button
+              variant="outline"
               onClick={() => nav(`/resumes/${id}/export`)}
             >
               <Download size={14} /> Export PDF
@@ -186,6 +257,13 @@ export default function ResumeDetail() {
         )}
       </Card>
 
+      {activeVersion && isThinParse(activeVersion.parsedSections) && (
+        <ThinParseNotice
+          onReparse={() => reparse.mutate(activeVersionId)}
+          isPending={reparse.isPending}
+        />
+      )}
+
       {!analysis && !analysisQuery.isLoading && (
         <EmptyState
           icon={Sparkles}
@@ -227,6 +305,17 @@ export default function ResumeDetail() {
               </Card>
             </div>
           </div>
+
+          <OptimizeCard
+            analysis={analysis}
+            targetRole={targetRole}
+            isPending={optimize.isPending}
+            error={optimize.error?.message}
+            onOptimize={runOptimize}
+            onExport={() => nav(`/resumes/${id}/export`)}
+          />
+
+          {activeVersion?.notes && <VersionNotes notes={activeVersion.notes} />}
 
           <Tabs value={tab} onValueChange={setTab}>
             <TabsList>

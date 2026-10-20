@@ -30,7 +30,7 @@ function errorHandler(err, req, res, _next) {
   }
 
   if (status >= 500) {
-    console.error(`[${req.method} ${req.originalUrl}]`, err);
+    console.error(`[${req.method} ${req.originalUrl}]`, err.name, "-", err.stack || err.message);
   }
 
   res.status(status).json({

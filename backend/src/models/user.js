@@ -13,6 +13,13 @@ const userSchema = new mongoose.Schema(
     },
     passwordHash: { type: String, required: true, select: false },
     name: { type: String, required: true, trim: true, maxlength: 80 },
+    onboarding: {
+      targetRole: { type: String, trim: true, maxlength: 80, default: "" },
+      experienceLevel: { type: String, enum: ["", "beginner", "academic_projects", "internships", "other"], default: "" },
+      goal: { type: String, enum: ["", "analyze", "tailor", "improve_projects", "from_scratch"], default: "" },
+      jobDescription: { type: String, maxlength: 15000, default: "" },
+      completedAt: { type: Date, default: null },
+    },
   },
   { timestamps: true }
 );

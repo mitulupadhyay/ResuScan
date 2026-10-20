@@ -5,6 +5,8 @@ import { Card, CardTitle, CardDescription, CardHeader } from "@/components/ui/Ca
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { UploadDropzone } from "@/components/resume/UploadDropzone";
+import { Button } from "@/components/ui/Button";
+import { resumesApi } from "@/api/resumes";
 import { ResumeRow } from "@/components/resume/ResumeRow";
 import { useResumesList } from "@/hooks/useResumes";
 
@@ -30,11 +32,24 @@ export default function Resumes() {
               <div>
                 <CardTitle className="text-base">Upload a resume</CardTitle>
                 <CardDescription className="mt-1">
-                  PDF only. We extract the text and create version V1.
+                  PDF or Word (.docx). We extract the text and create version V1.
                 </CardDescription>
               </div>
             </CardHeader>
             <UploadDropzone onUploaded={handleUploaded} />
+            <div className="mt-4 pt-4 border-t border-[var(--border)] flex items-center justify-between gap-3">
+              <span className="text-xs text-[var(--ink-muted)]">No resume yet?</span>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={async () => {
+                  const { resume } = await resumesApi.createBlank();
+                  nav(`/resumes/${resume._id}/edit`);
+                }}
+              >
+                Start from scratch
+              </Button>
+            </div>
           </Card>
         </div>
 

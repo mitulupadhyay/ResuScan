@@ -161,6 +161,48 @@ function AppearanceSection() {
   );
 }
 
+function DeleteAccountSection() {
+  const toast = useToast();
+  const { logout } = useAuth();
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function remove() {
+    if (!window.confirm("Permanently delete your account and ALL resumes, versions, analyses and job matches? This cannot be undone.")) return;
+    setBusy(true);
+    setError("");
+    try {
+      await authApi.deleteAccount(password);
+      toast.info("Account deleted", "All your data has been removed.");
+      await logout();
+    } catch (e) {
+      setError(e?.message || "Couldn't delete the account.");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card padding="lg" className="max-w-2xl">
+      <CardHeader>
+        <div>
+          <CardTitle className="text-base">Delete account</CardTitle>
+          <CardDescription className="mt-1">
+            Permanently removes your account and everything you've uploaded or generated: resumes, every version, analyses and job matches. Nothing is kept.
+          </CardDescription>
+        </div>
+      </CardHeader>
+      <div className="space-y-3">
+        <Input type="password" placeholder="Confirm with your password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
+        {error && <div className="text-xs text-[var(--danger)]">{error}</div>}
+        <Button variant="outline" onClick={remove} disabled={busy || !password}>
+          {busy ? "Deleting…" : "Delete my account"}
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
 function PasswordSection() {
   const toast = useToast();
   const [currentPassword, setCurrent] = useState("");
@@ -271,6 +313,7 @@ export default function Settings() {
           <TabsTrigger value="profile">Profile</TabsTrigger>
           <TabsTrigger value="appearance">Appearance</TabsTrigger>
           <TabsTrigger value="password">Password</TabsTrigger>
+          <TabsTrigger value="account">Delete account</TabsTrigger>
         </TabsList>
 
         <div className="mt-6">
@@ -282,6 +325,9 @@ export default function Settings() {
           </TabsContent>
           <TabsContent value="password">
             <PasswordSection />
+          </TabsContent>
+          <TabsContent value="account">
+            <DeleteAccountSection />
           </TabsContent>
         </div>
       </Tabs>

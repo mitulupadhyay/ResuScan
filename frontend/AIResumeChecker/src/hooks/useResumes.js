@@ -111,6 +111,77 @@ export function useApplyRewrites(id) {
   });
 }
 
+function useInvalidateResume(id) {
+  const qc = useQueryClient();
+  // Returns a promise so callers can wait for fresh data before navigating.
+  return () =>
+    Promise.all([
+      qc.invalidateQueries({ queryKey: resumeKeys.detail(id) }),
+      qc.invalidateQueries({ queryKey: resumeKeys.list() }),
+      qc.invalidateQueries({ queryKey: ["resumes", "fullVersion", id] }),
+      qc.invalidateQueries({ queryKey: dashboardKey }),
+    ]);
+}
+
+export function useSaveSections(id) {
+  const invalidate = useInvalidateResume(id);
+  const toast = useToast();
+  return useMutation({
+    mutationFn: ({ versionId, sections }) => resumesApi.saveSections(id, versionId, sections),
+    onSuccess: async (d) => {
+      await invalidate();
+      if (d.unchanged) toast.info("No changes to save");
+      else toast.success("Saved as a new version", `${d.version.label} created. Your original is unchanged.`);
+    },
+    onError: (e) => toast.error("Couldn't save changes", e?.message),
+  });
+}
+
+export function useRestoreVersion(id) {
+  const invalidate = useInvalidateResume(id);
+  const toast = useToast();
+  return useMutation({
+    mutationFn: (versionId) => resumesApi.restore(id, versionId),
+    onSuccess: async (d) => {
+      await invalidate();
+      toast.success("Version restored", `${d.restoredFrom} is now the current version as ${d.version.label}. History is kept.`);
+    },
+    onError: (e) => toast.error("Couldn't restore version", e?.message),
+  });
+}
+
+export function useOptimizeResume(id) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  return useMutation({
+    mutationFn: (body) => resumesApi.optimize(id, body),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: resumeKeys.detail(id) });
+      qc.invalidateQueries({ queryKey: resumeKeys.list() });
+      qc.invalidateQueries({ queryKey: dashboardKey });
+      toast.success(
+        "ATS-optimized resume created",
+        `${data?.version?.label || "New version"} is ready to review and export`
+      );
+    },
+    onError: (e) => toast.error("Couldn't optimize resume", e?.message),
+  });
+}
+
+export function useReparseVersion(id) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  return useMutation({
+    mutationFn: (versionId) => resumesApi.reparse(id, versionId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: resumeKeys.detail(id) });
+      qc.invalidateQueries({ queryKey: ["resumes", "fullVersion", id] });
+      toast.success("Resume re-read", "Sections were extracted again");
+    },
+    onError: (e) => toast.error("Couldn't re-read resume", e?.message),
+  });
+}
+
 export function useDiff(id, from, to, mode = "words") {
   return useQuery({
     queryKey: ["resumes", "diff", id, from, to, mode],

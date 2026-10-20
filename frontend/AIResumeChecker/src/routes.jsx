@@ -8,6 +8,10 @@ import { Placeholder } from "@/pages/Placeholder";
 import Resumes from "@/pages/Resumes";
 import ResumeDetail from "@/pages/ResumeDetail";
 import ExportPage from "@/pages/Export";
+import JobMatch from "@/pages/JobMatch";
+import EditResume from "@/pages/EditResume";
+import ImproveBullets from "@/pages/ImproveBullets";
+import Onboarding from "@/pages/Onboarding";
 import Insights from "@/pages/Insights";
 import Versions from "@/pages/Versions";
 import History from "@/pages/History";
@@ -39,6 +43,10 @@ export const router = createBrowserRouter([
       { path: "resumes", element: <Resumes /> },
       { path: "resumes/:id", element: <ResumeDetail /> },
       { path: "resumes/:id/export", element: <ExportPage /> },
+      { path: "resumes/:id/match", element: <JobMatch /> },
+      { path: "resumes/:id/edit", element: <EditResume /> },
+      { path: "resumes/:id/improve", element: <ImproveBullets /> },
+      { path: "onboarding", element: <Onboarding /> },
       { path: "insights", element: <Insights /> },
       { path: "versions", element: <Versions /> },
       { path: "history", element: <History /> },

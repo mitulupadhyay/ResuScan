@@ -42,6 +42,12 @@ export function AuthProvider({ children }) {
     return user;
   }, []);
 
+  const saveOnboarding = useCallback(async (payload) => {
+    const { user } = await authApi.saveOnboarding(payload);
+    setUser(user);
+    return user;
+  }, []);
+
   const logout = useCallback(async () => {
     try {
       await authApi.logout();
@@ -52,7 +58,7 @@ export function AuthProvider({ children }) {
   }, [queryClient]);
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, refresh, updateProfile }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout, refresh, updateProfile, saveOnboarding }}>
       {children}
     </AuthContext.Provider>
   );
